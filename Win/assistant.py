@@ -12,6 +12,7 @@ import easyocr
 from google import genai
 from PIL import ImageGrab
 from pynput import keyboard
+from win11toast import toast
 
 warnings.filterwarnings("ignore")
 
@@ -36,7 +37,7 @@ if not API_KEY:
     )
 
 print(" \033[31mSkatat'")
-print(" 1.1 WINDOWS EDITION")
+print(" 1.2 WINDOWS EDITION")
 print(" by tetramino\033[0m")
 
 client = genai.Client(api_key=API_KEY)
@@ -50,16 +51,13 @@ def show_win_notification(body: str, title: str):
     if CONFIG.get("silent_mode", False):
         return
 
-    safe_body = body.replace('"', '`"').replace("\n", " ")
-    safe_title = title.replace('"', '`"')
-    ps_cmd = f"$w=New-Object -ComObject Wscript.Shell; $w.Popup('{safe_body}', 4, '{safe_title}', 64)"
-    subprocess.Popen(
-        ["powershell", "-WindowStyle", "Hidden", "-Command", ps_cmd]
-    )
+    try:
+        toast(title, body, duration="short")
+    except Exception:
+        pass
 
 
 class ScreenSnipper:
-
     def __init__(self):
         self.root = tk.Tk()
         self.root.attributes("-alpha", 0.3)
@@ -84,15 +82,16 @@ class ScreenSnipper:
         self.start_x = event.x
         self.start_y = event.y
         self.rect = self.canvas.create_rectangle(
-            self.x, self.y, 1, 1, outline="red", width=2
+            self.start_x, self.start_y, self.start_x, self.start_y, outline="red", width=2
         )
 
     def on_drag(self, event):
-        cur_x, cur_y = (event.x, event.y)
-        self.canvas.coords(self.rect, self.start_x, self.start_y, cur_x, cur_y)
+        cur_x, cur_y = event.x, event.y
+        if self.rect:
+            self.canvas.coords(self.rect, self.start_x, self.start_y, cur_x, cur_y)
 
     def on_release(self, event):
-        end_x, end_y = (event.x, event.y)
+        end_x, end_y = event.x, event.y
         x1 = min(self.start_x, end_x)
         y1 = min(self.start_y, end_y)
         x2 = max(self.start_x, end_x)
@@ -100,6 +99,8 @@ class ScreenSnipper:
 
         if (x2 - x1) > 10 and (y2 - y1) > 10:
             self.bbox = (x1, y1, x2, y2)
+
+        self.root.quit()
         self.root.destroy()
 
     def get_bbox(self):
@@ -122,13 +123,16 @@ def get_text_from_screenshot() -> str:
     lines = ocr_reader.readtext(tmp_path, detail=0)
 
     if os.path.exists(tmp_path):
-        os.remove(tmp_path)
+        try:
+            os.remove(tmp_path)
+        except Exception:
+            pass
 
     return "\n".join(lines).strip()
 
 
 def ask_gemini_text(prompt: str) -> str:
-    models_to_try = CONFIG["models"].copy()
+    models_to_try = CONFIG.get("models", ["gemini-2.5-flash", "gemini-1.5-flash"])
     random.shuffle(models_to_try)
 
     for model in models_to_try:
@@ -141,20 +145,11 @@ def ask_gemini_text(prompt: str) -> str:
                 return response.text.strip()
             except Exception as e:
                 err_str = str(e)
-                if (
-                    "503" in err_str
-                    or "UNAVAILABLE" in err_str
-                    or "429" in err_str
-                    or "RESOURCE_EXHAUSTED" in err_str
-                ):
-                    print(
-                        f"    [503/429] {model} занята. Попытка {attempt}/3 через 1.5 сек..."
-                    )
+                if "503" in err_str or "UNAVAILABLE" in err_str or "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+                    print(f"    [503/429] {model} занята. Попытка {attempt}/3 через 1.5 сек...")
                     time.sleep(1.5)
                 elif "404" in err_str or "NOT_FOUND" in err_str:
-                    print(
-                        f"    [404] Модель {model} не существует. Пропускаем."
-                    )
+                    print(f"    [404] Модель {model} не существует. Пропускаем.")
                     break
                 else:
                     raise RuntimeError(f"Ошибка Gemini API: {e}")
@@ -219,14 +214,14 @@ def process_hard():
         smart_layout_switch(code)
 
         stop_typing_event.clear()
-        print(" [hard] Поехали нахуй...")
+        print(" [hard] Поехали...")
 
         min_delay = CONFIG["typing_settings"]["min_delay"]
         max_delay = CONFIG["typing_settings"]["max_delay"]
 
         for ch in code:
             if stop_typing_event.is_set():
-                print(" [stop] Ты дебил бля зачем печать остановил.")
+                print(" [stop] Печать остановлена.")
                 show_win_notification("Печать остановлена", "Стоп")
                 return
 
@@ -253,8 +248,8 @@ def smart_layout_switch(text: str):
 
     if not has_russian:
         print("[layout] changing to EN layout")
-        # 0x00000409 — Английский (США)
         hwnd = ctypes.windll.user32.GetForegroundWindow()
+        # 0x00000409 = Английский (США)
         ctypes.windll.user32.PostMessageW(
             hwnd, 0x0050, 0, ctypes.c_void_p(0x00000409)
         )
@@ -271,17 +266,20 @@ HOTKEYS = {
 
 def main():
     global CONFIG
+    silent_status = (
+        "\033[31mВКЛ\033[0m"
+        if CONFIG.get("silent_mode")
+        else "\033[32mВЫКЛ\033[0m"
+    )
     print()
     print(" Управление ёпта, ставим английскую раскладку")
     print(
-        " \033[32mCtrl + Shift + 3\033[0m : Ответ на тест (всплывающее уведомление)"
+        " \033[32mCtrl + Shift + 3\033[0m : Ответ на тест (боковое уведомление)"
     )
     print(" \033[32mCtrl + Shift + 2\033[0m : Решение задачи (автопечать кода)")
     print(" \033[32mCtrl + Shift + 1\033[0m : Экстренная остановка печати")
     print()
-    print(
-        f" Silent Mode: {'\033[31mВКЛ\033[0m' if CONFIG.get('silent_mode') else '\033[32mВЫКЛ\033[0m'}"
-    )
+    print(f" Silent Mode: {silent_status}")
     print(" Доступные команды в терминале: silent, reload, exit")
     print()
 
