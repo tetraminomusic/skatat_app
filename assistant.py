@@ -157,6 +157,8 @@ def process_hard():
         )
         time.sleep(3)
 
+        smart_layout_switch(code)
+
         stop_typing_event.clear()
         print("[hard] Поехали нахуй...")
 
@@ -182,6 +184,24 @@ def process_hard():
 def stop_typing():
     print("[stop] Экстренная остановка")
     stop_typing_event.set()
+
+def smart_layout_switch(text: str):
+    has_russian = any('а' <= char.lower() <= 'я' for char in text)
+    
+    if not has_russian:
+        print("[layout] Обнаружен код/латиница. Переключаем на английский (ABC)...")
+        apple_script = '''
+        tell application "System Events"
+            set selected input source of current locale to input source "com.apple.keylayout.ABC"
+        end tell
+        '''
+        try:
+            subprocess.run(["osascript", "-e", apple_script], capture_output=True)
+            time.sleep(0.2)
+        except Exception:
+            pass
+    else:
+        print("[layout] Обнаружен русский текст (теория). Раскладка не трогается")
 
 
 HOTKEYS = {
