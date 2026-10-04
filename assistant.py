@@ -5,6 +5,7 @@ import threading
 import time
 import warnings
 import easyocr
+import sys
 from google import genai
 from pynput import keyboard
 
@@ -203,9 +204,20 @@ def main():
     print(" \033[32mCmd + Shift + 2\033[0m : Решение задачи (автопечать кода)")
     print(" \033[32mCmd + Shift + 1\033[0m : Экстренная остановка печати")
 
-    with keyboard.GlobalHotKeys(HOTKEYS) as listener:
-        listener.join()
+    listener = keyboard.GlobalHotKeys(HOTKEYS)
+    listener.start()
 
+    try:
+        while True:
+            cmd = input().strip().lower()
+            if cmd == "exit":
+                listener.stop()
+                sys.exit(0)
+            elif cmd != "":
+                print(f"Неизвестная команда. Введите 'exit' для выхода.")
+    except (KeyboardInterrupt, SystemExit):
+        listener.stop()
+        print(f"\n[выход] Приложение остановлено. Удачи!")
 
 if __name__ == "__main__":
     main()
